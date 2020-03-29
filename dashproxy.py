@@ -9,6 +9,7 @@ import requests
 import xml.etree.ElementTree
 import copy
 
+from threading import Thread
 from termcolor import colored
 
 logging.VERBOSE = (logging.INFO + logging.DEBUG) // 2
@@ -107,12 +108,15 @@ class DashProxy(HasLogger):
         self.download = download
         self.save_mpds = save_mpds
         self.i_refresh = 0
-
+        self.threads = list()
         self.downloaders = {}
 
     def run(self):
         logger.log(logging.INFO, 'Running dash proxy for stream %s. Output goes in %s' % (self.mpd, self.output_dir))
         self.refresh_mpd()
+        for t in self.threads:
+            logger.log(logging.INFO, 'Waiting for %d threads to join' % (len(self.threads)))
+            t.join()
 
     def refresh_mpd(self, after=0):
         self.i_refresh += 1
@@ -170,7 +174,10 @@ class DashProxy(HasLogger):
             self.info('Starting a downloader for %s' % (rep_addr,))
             downloader = DashDownloader(self, rep_addr)
             self.downloaders[rep_addr] = downloader
-            downloader.handle_mpd(mpd, self.get_base_url(mpd))
+            t = Thread(target=downloader.handle_mpd, name=rep_addr,
+                       args=(mpd, self.get_base_url(mpd)))
+            self.threads.append(t)
+            t.start()
 
     def write_output_mpd(self, mpd):
         self.info('Writing the update MPD file')
